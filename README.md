@@ -173,6 +173,52 @@ After editing, publish a new version and share the updated link.
 
 ---
 
+## Project Structure
+
+```
+Assignment-Tracker/
+├── README.md                      # This documentation
+├── src/
+│   ├── index.js                   # Entry point and exports
+│   ├── UWAssignmentTracker.jsx    # Main React component
+│   └── utils/
+│       └── validation.js          # Input validation & authorization utilities
+└── UW_Assignment_Tracker (7).jsx  # Legacy file (deprecated)
+```
+
+### Validation Module (`src/utils/validation.js`)
+
+The validation module provides reusable utilities for:
+
+- **Email Validation**: RFC 5322 compliant format checking
+- **Domain Validation**: Ensures only @nationslending.com emails are accepted
+- **Input Sanitization**: XSS prevention for string inputs
+- **Authorization Helpers**: Role-based access control utilities
+
+Key exports:
+```javascript
+import {
+  isValidEmailFormat,     // Check email format
+  isAllowedDomain,        // Check email domain
+  sanitizeEmail,          // Clean email input
+  validateAuthorization,  // Full auth validation
+  canModifyStatus,        // Check status edit permission
+  canModifyCount,         // Check count edit permission
+  UserRole                // Role enum (UNDERWRITER, ASSIGNER, UNKNOWN)
+} from './utils/validation.js';
+```
+
+### Future: Aira Integration
+
+The validation module includes placeholder functions for dynamic user management:
+
+- `validateUserFromAPI()` - Validate users against Aira backend
+- `fetchUserConfig()` - Load user list dynamically from Aira
+
+These are ready to be implemented when the Aira backend is available.
+
+---
+
 ## Version History
 
 | Version | Date | Changes |
@@ -183,6 +229,7 @@ After editing, publish a new version and share the updated link.
 | 1.3 | — | File counts visible to assigners only |
 | 1.4 | — | Added Refresh button (no logout required) |
 | 1.5 | — | Status + count reset at 2am CST, timestamps on status changes, smart sorting |
+| 2.0 | — | Refactored architecture: validation module, improved auth, notification system, Aira-ready structure |
 
 ---
 
