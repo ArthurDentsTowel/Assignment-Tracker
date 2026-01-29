@@ -7,6 +7,7 @@ import {
   UserRole,
   ValidationMessages
 } from './utils/validation.js';
+import storage from './utils/storage.js';
 
 // ============================================
 // CONFIGURATION
@@ -137,7 +138,7 @@ export default function UWAssignmentTracker() {
 
   const loadData = useCallback(async () => {
     try {
-      const result = await window.storage.get(STORAGE_KEY, true);
+      const result = await storage.get(STORAGE_KEY, true);
       let data;
 
       if (result && result.value) {
@@ -153,7 +154,7 @@ export default function UWAssignmentTracker() {
             data.underwriters[email].statusTimestamp = null;
           });
           data.lastResetDate = today;
-          await window.storage.set(STORAGE_KEY, JSON.stringify(data), true);
+          await storage.set(STORAGE_KEY, JSON.stringify(data), true);
         }
 
         // Sync with config (add new UWs, ensure fields exist)
@@ -173,7 +174,7 @@ export default function UWAssignmentTracker() {
         });
       } else {
         data = createDefaultData(config);
-        await window.storage.set(STORAGE_KEY, JSON.stringify(data), true);
+        await storage.set(STORAGE_KEY, JSON.stringify(data), true);
       }
 
       setAppData(data);
@@ -189,7 +190,7 @@ export default function UWAssignmentTracker() {
 
   const saveData = useCallback(async (newData) => {
     try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(newData), true);
+      await storage.set(STORAGE_KEY, JSON.stringify(newData), true);
       setAppData(newData);
     } catch (err) {
       console.error('Save error:', err);

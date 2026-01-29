@@ -26,3 +26,6 @@ export {
   fetchUserConfig,
   ValidationMessages
 } from './utils/validation.js';
+
+// Storage adapter - for switching between localStorage/Claude/Supabase
+export { default as storage } from './utils/storage.js';
