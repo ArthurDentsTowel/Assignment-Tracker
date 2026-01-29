@@ -208,14 +208,14 @@ import {
 } from './utils/validation.js';
 ```
 
-### Future: Aira Integration
+### Future: Supabase Integration
 
 The validation module includes placeholder functions for dynamic user management:
 
-- `validateUserFromAPI()` - Validate users against Aira backend
-- `fetchUserConfig()` - Load user list dynamically from Aira
+- `validateUserFromAPI()` - Validate users against Supabase backend
+- `fetchUserConfig()` - Load user list dynamically from database
 
-These are ready to be implemented when the Aira backend is available.
+These are ready to be implemented when Supabase is configured.
 
 ---
 
@@ -229,7 +229,7 @@ These are ready to be implemented when the Aira backend is available.
 | 1.3 | — | File counts visible to assigners only |
 | 1.4 | — | Added Refresh button (no logout required) |
 | 1.5 | — | Status + count reset at 2am CST, timestamps on status changes, smart sorting |
-| 2.0 | — | Refactored architecture: validation module, improved auth, notification system, Aira-ready structure |
+| 2.0 | — | Refactored architecture: validation module, improved auth, notification system, Supabase-ready structure |
 
 ---
 

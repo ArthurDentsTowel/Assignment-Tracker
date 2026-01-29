@@ -11,7 +11,7 @@ import storage from './utils/storage.js';
 
 // ============================================
 // CONFIGURATION
-// This section will be replaced with dynamic loading from Aira
+// This section will be replaced with dynamic loading from Supabase
 // ============================================
 const CONFIG = {
   underwriters: {
