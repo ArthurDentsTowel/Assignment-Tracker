@@ -2,7 +2,7 @@
  * Validation Utilities for UW Assignment Tracker
  *
  * This module provides input validation, sanitization, and authorization
- * helpers. Designed to support future integration with Aira and dynamic
+ * helpers. Designed to support future integration with Supabase and dynamic
  * user management systems.
  */
 
@@ -209,12 +209,12 @@ export function canModifyCount(userRole) {
 
 /**
  * Placeholder for future API-based user validation
- * When Aira integration is ready, this will call the backend
+ * When Supabase is configured, this will call the backend
  * @param {string} email - User email to validate
  * @returns {Promise<Object>} User data from backend
  */
 export async function validateUserFromAPI(email) {
-  // TODO: Implement when Aira backend is ready
+  // TODO: Implement when Supabase is configured
   // Example structure:
   // const response = await fetch('/api/users/validate', {
   //   method: 'POST',
@@ -227,11 +227,11 @@ export async function validateUserFromAPI(email) {
 }
 
 /**
- * Placeholder for fetching dynamic user list from Aira
+ * Placeholder for fetching dynamic user list from Supabase
  * @returns {Promise<Object>} Configuration object with users
  */
 export async function fetchUserConfig() {
-  // TODO: Implement when Aira backend is ready
+  // TODO: Implement when Supabase is configured
   // Example structure:
   // const response = await fetch('/api/users/config');
   // return response.json();
