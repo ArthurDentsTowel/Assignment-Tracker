@@ -8,6 +8,7 @@ import {
   ValidationMessages
 } from './utils/validation.js';
 import storage from './utils/storage.js';
+import AdminPanel from './components/AdminPanel.jsx';
 
 // ============================================
 // CONFIGURATION
@@ -124,6 +125,7 @@ export default function UWAssignmentTracker() {
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // Config state (for future dynamic loading)
   const [config, setConfig] = useState(CONFIG);
@@ -592,6 +594,24 @@ export default function UWAssignmentTracker() {
             Refresh
           </button>
 
+          {/* Admin Button - Assigners only */}
+          {isAssigner && (
+            <button
+              onClick={() => setShowAdminPanel(true)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: '1px solid rgba(102, 126, 234, 0.5)',
+                background: 'rgba(102, 126, 234, 0.1)',
+                color: '#667eea',
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              Admin
+            </button>
+          )}
+
           <button
             onClick={handleSignOut}
             style={{
@@ -608,6 +628,18 @@ export default function UWAssignmentTracker() {
           </button>
         </div>
       </div>
+
+      {/* Admin Panel Modal */}
+      {showAdminPanel && (
+        <AdminPanel
+          config={config}
+          onClose={() => setShowAdminPanel(false)}
+          onConfigChange={(newConfig) => {
+            setConfig(newConfig);
+            setShowAdminPanel(false);
+          }}
+        />
+      )}
 
       {/* Legend */}
       <div style={{
