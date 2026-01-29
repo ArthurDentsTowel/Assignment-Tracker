@@ -6,11 +6,18 @@
  * - Claude's window.storage (when running as artifact)
  * - Supabase (future, for production)
  *
+ * Features:
+ * - Automatic retry with exponential backoff
+ * - Error tracking and reporting
+ * - Provider auto-detection
+ *
  * Usage:
  *   import storage from './utils/storage';
  *   await storage.get('key');
  *   await storage.set('key', value);
  */
+
+import { withRetry, isRetryableError } from './retry.js';
 
 // Detect environment
 const isClaudeArtifact = typeof window !== 'undefined' &&
@@ -197,21 +204,29 @@ const storage = {
   },
 
   /**
-   * Get value by key
+   * Get value by key (with retry)
    * @param {string} key - Storage key
    * @param {boolean} shared - For Claude: use shared storage (ignored for other providers)
    * @returns {Promise<{value: string}|null>}
    */
   async get(key, shared = true) {
     const adapter = getAdapter();
-    if (currentProvider === StorageProvider.CLAUDE) {
-      return adapter.get(key, shared);
-    }
-    return adapter.get(key);
+    return withRetry(
+      () => currentProvider === StorageProvider.CLAUDE
+        ? adapter.get(key, shared)
+        : adapter.get(key),
+      {
+        maxAttempts: 3,
+        shouldRetry: isRetryableError,
+        onRetry: ({ attempt, maxAttempts, error }) => {
+          console.warn(`Storage get retry ${attempt}/${maxAttempts}:`, error.message);
+        }
+      }
+    );
   },
 
   /**
-   * Set value by key
+   * Set value by key (with retry)
    * @param {string} key - Storage key
    * @param {string} value - Value to store (should be stringified if object)
    * @param {boolean} shared - For Claude: use shared storage (ignored for other providers)
@@ -219,24 +234,40 @@ const storage = {
    */
   async set(key, value, shared = true) {
     const adapter = getAdapter();
-    if (currentProvider === StorageProvider.CLAUDE) {
-      return adapter.set(key, value, shared);
-    }
-    return adapter.set(key, value);
+    return withRetry(
+      () => currentProvider === StorageProvider.CLAUDE
+        ? adapter.set(key, value, shared)
+        : adapter.set(key, value),
+      {
+        maxAttempts: 3,
+        shouldRetry: isRetryableError,
+        onRetry: ({ attempt, maxAttempts, error }) => {
+          console.warn(`Storage set retry ${attempt}/${maxAttempts}:`, error.message);
+        }
+      }
+    );
   },
 
   /**
-   * Remove value by key
+   * Remove value by key (with retry)
    * @param {string} key - Storage key
    * @param {boolean} shared - For Claude: use shared storage (ignored for other providers)
    * @returns {Promise<boolean>}
    */
   async remove(key, shared = true) {
     const adapter = getAdapter();
-    if (currentProvider === StorageProvider.CLAUDE) {
-      return adapter.remove(key, shared);
-    }
-    return adapter.remove(key);
+    return withRetry(
+      () => currentProvider === StorageProvider.CLAUDE
+        ? adapter.remove(key, shared)
+        : adapter.remove(key),
+      {
+        maxAttempts: 3,
+        shouldRetry: isRetryableError,
+        onRetry: ({ attempt, maxAttempts, error }) => {
+          console.warn(`Storage remove retry ${attempt}/${maxAttempts}:`, error.message);
+        }
+      }
+    );
   },
 
   // Export provider enum for external use

@@ -178,12 +178,16 @@ After editing, publish a new version and share the updated link.
 ```
 Assignment-Tracker/
 ├── README.md                      # This documentation
-├── src/
-│   ├── index.js                   # Entry point and exports
-│   ├── UWAssignmentTracker.jsx    # Main React component
-│   └── utils/
-│       └── validation.js          # Input validation & authorization utilities
-└── UW_Assignment_Tracker (7).jsx  # Legacy file (deprecated)
+├── package.json                   # Dependencies and scripts
+├── index.html                     # HTML entry point
+├── vite.config.js                 # Build configuration
+└── src/
+    ├── index.js                   # Entry point and exports
+    ├── main.jsx                   # React DOM entry
+    ├── UWAssignmentTracker.jsx    # Main React component
+    └── utils/
+        ├── validation.js          # Input validation & authorization
+        └── storage.js             # Storage adapter (localStorage/Supabase)
 ```
 
 ### Validation Module (`src/utils/validation.js`)

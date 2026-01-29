@@ -8,6 +8,14 @@ import {
   ValidationMessages
 } from './utils/validation.js';
 import storage from './utils/storage.js';
+import AdminPanel from './components/AdminPanel.jsx';
+import {
+  logStatusChange,
+  logCountChange,
+  logUserLogin,
+  logUserLogout,
+  logDailyReset
+} from './utils/auditLog.js';
 
 // ============================================
 // CONFIGURATION
@@ -124,6 +132,7 @@ export default function UWAssignmentTracker() {
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // Config state (for future dynamic loading)
   const [config, setConfig] = useState(CONFIG);
@@ -155,6 +164,9 @@ export default function UWAssignmentTracker() {
           });
           data.lastResetDate = today;
           await storage.set(STORAGE_KEY, JSON.stringify(data), true);
+
+          // Audit log for daily reset
+          logDailyReset('system');
         }
 
         // Sync with config (add new UWs, ensure fields exist)
@@ -229,9 +241,17 @@ export default function UWAssignmentTracker() {
     setDisplayName(authResult.displayName);
     setErrors([]);
     showNotification(`Welcome, ${authResult.displayName}!`, 'success');
+
+    // Audit log
+    logUserLogin(authResult.email, authResult.role);
   }
 
   function handleSignOut() {
+    // Audit log (before clearing currentUser)
+    if (currentUser) {
+      logUserLogout(currentUser);
+    }
+
     setCurrentUser(null);
     setUserRole(UserRole.UNKNOWN);
     setDisplayName('');
@@ -254,6 +274,9 @@ export default function UWAssignmentTracker() {
 
     const currentStatus = appData.underwriters[email]?.status || 'neutral';
     const updatedStatus = currentStatus === newStatus ? 'neutral' : newStatus;
+
+    // Audit log
+    logStatusChange(currentUser, email, currentStatus, updatedStatus);
 
     const newData = {
       ...appData,
@@ -282,6 +305,11 @@ export default function UWAssignmentTracker() {
 
     const currentCount = appData.underwriters[email]?.count || 0;
     const newCount = Math.max(0, Math.min(99, currentCount + delta));
+
+    // Only log if count actually changed
+    if (currentCount !== newCount) {
+      logCountChange(currentUser, email, currentCount, newCount);
+    }
 
     const newData = {
       ...appData,
@@ -592,6 +620,24 @@ export default function UWAssignmentTracker() {
             Refresh
           </button>
 
+          {/* Admin Button - Assigners only */}
+          {isAssigner && (
+            <button
+              onClick={() => setShowAdminPanel(true)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: '1px solid rgba(102, 126, 234, 0.5)',
+                background: 'rgba(102, 126, 234, 0.1)',
+                color: '#667eea',
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              Admin
+            </button>
+          )}
+
           <button
             onClick={handleSignOut}
             style={{
@@ -608,6 +654,18 @@ export default function UWAssignmentTracker() {
           </button>
         </div>
       </div>
+
+      {/* Admin Panel Modal */}
+      {showAdminPanel && (
+        <AdminPanel
+          config={config}
+          onClose={() => setShowAdminPanel(false)}
+          onConfigChange={(newConfig) => {
+            setConfig(newConfig);
+            setShowAdminPanel(false);
+          }}
+        />
+      )}
 
       {/* Legend */}
       <div style={{
