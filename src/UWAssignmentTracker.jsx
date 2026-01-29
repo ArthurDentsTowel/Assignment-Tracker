@@ -9,6 +9,13 @@ import {
 } from './utils/validation.js';
 import storage from './utils/storage.js';
 import AdminPanel from './components/AdminPanel.jsx';
+import {
+  logStatusChange,
+  logCountChange,
+  logUserLogin,
+  logUserLogout,
+  logDailyReset
+} from './utils/auditLog.js';
 
 // ============================================
 // CONFIGURATION
@@ -157,6 +164,9 @@ export default function UWAssignmentTracker() {
           });
           data.lastResetDate = today;
           await storage.set(STORAGE_KEY, JSON.stringify(data), true);
+
+          // Audit log for daily reset
+          logDailyReset('system');
         }
 
         // Sync with config (add new UWs, ensure fields exist)
@@ -231,9 +241,17 @@ export default function UWAssignmentTracker() {
     setDisplayName(authResult.displayName);
     setErrors([]);
     showNotification(`Welcome, ${authResult.displayName}!`, 'success');
+
+    // Audit log
+    logUserLogin(authResult.email, authResult.role);
   }
 
   function handleSignOut() {
+    // Audit log (before clearing currentUser)
+    if (currentUser) {
+      logUserLogout(currentUser);
+    }
+
     setCurrentUser(null);
     setUserRole(UserRole.UNKNOWN);
     setDisplayName('');
@@ -256,6 +274,9 @@ export default function UWAssignmentTracker() {
 
     const currentStatus = appData.underwriters[email]?.status || 'neutral';
     const updatedStatus = currentStatus === newStatus ? 'neutral' : newStatus;
+
+    // Audit log
+    logStatusChange(currentUser, email, currentStatus, updatedStatus);
 
     const newData = {
       ...appData,
@@ -284,6 +305,11 @@ export default function UWAssignmentTracker() {
 
     const currentCount = appData.underwriters[email]?.count || 0;
     const newCount = Math.max(0, Math.min(99, currentCount + delta));
+
+    // Only log if count actually changed
+    if (currentCount !== newCount) {
+      logCountChange(currentUser, email, currentCount, newCount);
+    }
 
     const newData = {
       ...appData,
