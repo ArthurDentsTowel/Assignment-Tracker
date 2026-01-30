@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from './contexts/AuthContext.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import {
   getUsers,
@@ -10,24 +9,14 @@ import {
 } from './utils/supabase.js';
 import {
   logStatusChange,
-  logCountChange
+  logCountChange,
+  logUserLogin,
+  logUserLogout
 } from './utils/auditLog.js';
 
 // ============================================
 // TIME UTILITIES
 // ============================================
-
-function getCSTDateString() {
-  const now = new Date();
-  const cstOffset = -6 * 60;
-  const utcOffset = now.getTimezoneOffset();
-  const cstTime = new Date(now.getTime() + (utcOffset + cstOffset) * 60000);
-
-  if (cstTime.getHours() < 2) {
-    cstTime.setDate(cstTime.getDate() - 1);
-  }
-  return cstTime.toISOString().split('T')[0];
-}
 
 function getCSTTimeString() {
   const now = new Date();
@@ -54,7 +43,12 @@ function getCSTTimestamp() {
 // ============================================
 
 export default function UWAssignmentTracker() {
-  const { appUser, signOut, isAssigner } = useAuth();
+  // Auth state (email-only login)
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [displayName, setDisplayName] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Data state
   const [users, setUsers] = useState([]);
@@ -66,17 +60,20 @@ export default function UWAssignmentTracker() {
   const [notification, setNotification] = useState(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
+  // Derived
+  const isAssigner = userRole === 'assigner';
+
   // ============================================
   // DATA OPERATIONS
   // ============================================
 
   const loadData = useCallback(async () => {
     try {
-      // Load users
+      // Load users from Supabase
       const { data: usersData, error: usersError } = await getUsers();
       if (usersError) throw usersError;
 
-      // Load tracker status
+      // Load tracker status from Supabase
       const { data: trackerDataArr, error: trackerError } = await getTrackerData();
       if (trackerError) throw trackerError;
 
@@ -140,12 +137,53 @@ export default function UWAssignmentTracker() {
   }, []);
 
   // ============================================
+  // AUTH OPERATIONS (Email-only)
+  // ============================================
+
+  function handleLogin() {
+    setLoginError('');
+    const email = emailInput.trim().toLowerCase();
+
+    if (!email) {
+      setLoginError('Please enter your email address.');
+      return;
+    }
+
+    // Check if user exists in database
+    const user = users.find(u => u.email.toLowerCase() === email);
+
+    if (!user) {
+      setLoginError('Email not recognized. Please use your Nations Lending email.');
+      return;
+    }
+
+    // Login successful
+    setCurrentUser(user.email);
+    setUserRole(user.role);
+    setDisplayName(user.name);
+    showNotification(`Welcome, ${user.name}!`, 'success');
+
+    // Audit log
+    logUserLogin(user.email, user.role);
+  }
+
+  function handleSignOut() {
+    if (currentUser) {
+      logUserLogout(currentUser);
+    }
+    setCurrentUser(null);
+    setUserRole(null);
+    setDisplayName('');
+    setEmailInput('');
+    setLoginError('');
+  }
+
+  // ============================================
   // STATUS & COUNT OPERATIONS
   // ============================================
 
   async function changeStatus(email, newStatus) {
-    // Authorization check
-    const canEdit = isAssigner || appUser?.email === email;
+    const canEdit = isAssigner || currentUser === email;
     if (!canEdit) {
       showNotification('You are not authorized to perform this action.', 'error');
       return;
@@ -167,7 +205,7 @@ export default function UWAssignmentTracker() {
     }));
 
     // Audit log
-    logStatusChange(appUser?.email, email, currentStatus, updatedStatus);
+    logStatusChange(currentUser, email, currentStatus, updatedStatus);
 
     // Save to Supabase
     const { error } = await updateTrackerStatus(email, {
@@ -179,13 +217,11 @@ export default function UWAssignmentTracker() {
     if (error) {
       console.error('Error updating status:', error);
       showNotification('Failed to update status.', 'error');
-      // Revert optimistic update
       loadData();
     }
   }
 
   async function changeCount(email, delta) {
-    // Authorization check
     if (!isAssigner) {
       showNotification('You are not authorized to perform this action.', 'error');
       return;
@@ -207,7 +243,7 @@ export default function UWAssignmentTracker() {
     }));
 
     // Audit log
-    logCountChange(appUser?.email, email, currentCount, newCount);
+    logCountChange(currentUser, email, currentCount, newCount);
 
     // Save to Supabase
     const { error } = await updateTrackerStatus(email, {
@@ -217,7 +253,6 @@ export default function UWAssignmentTracker() {
     if (error) {
       console.error('Error updating count:', error);
       showNotification('Failed to update count.', 'error');
-      // Revert optimistic update
       loadData();
     }
   }
@@ -259,7 +294,6 @@ export default function UWAssignmentTracker() {
     return [...greens, ...neutrals, ...reds];
   }
 
-  // Handle refresh
   async function handleRefresh() {
     setRefreshing(true);
     await loadData();
@@ -271,7 +305,7 @@ export default function UWAssignmentTracker() {
 
   const totalAssigned = Object.values(trackerData).reduce((sum, uw) => sum + (uw.count || 0), 0);
 
-  // Build config for admin panel (from users data)
+  // Build config for admin panel
   const config = {
     underwriters: {},
     assigners: []
@@ -306,6 +340,113 @@ export default function UWAssignmentTracker() {
           animation: 'spin 0.8s linear infinite'
         }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: LOGIN SCREEN
+  // ============================================
+
+  if (!currentUser) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}>
+        <div style={{
+          background: 'rgba(30, 41, 59, 0.8)',
+          borderRadius: '16px',
+          padding: '40px',
+          maxWidth: '400px',
+          width: '100%',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <h1 style={{
+            color: '#fff',
+            fontSize: '24px',
+            fontWeight: '600',
+            marginBottom: '8px',
+            textAlign: 'center'
+          }}>UW Assignment Tracker</h1>
+          <p style={{
+            color: 'rgba(255,255,255,0.5)',
+            fontSize: '14px',
+            marginBottom: '32px',
+            textAlign: 'center'
+          }}>Sign in to continue</p>
+
+          <div>
+            <input
+              type="email"
+              value={emailInput}
+              onChange={(e) => {
+                setEmailInput(e.target.value);
+                if (loginError) setLoginError('');
+              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+              placeholder="your.name@nationslending.com"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck="false"
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: '8px',
+                border: loginError
+                  ? '1px solid #ef4444'
+                  : '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(15, 23, 42, 0.8)',
+                color: '#fff',
+                fontSize: '16px',
+                marginBottom: '16px',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            {loginError && (
+              <p style={{
+                color: '#f87171',
+                fontSize: '14px',
+                marginBottom: '16px'
+              }}>
+                {loginError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLogin}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Sign In
+            </button>
+
+            <p style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: '12px',
+              marginTop: '16px',
+              textAlign: 'center'
+            }}>
+              Use your Nations Lending email address
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -367,7 +508,7 @@ export default function UWAssignmentTracker() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>
-            {appUser?.name}
+            {displayName}
             {isAssigner && <span style={{ color: '#667eea' }}> (Assigner)</span>}
           </span>
 
@@ -394,7 +535,6 @@ export default function UWAssignmentTracker() {
             Refresh
           </button>
 
-          {/* Admin Button - Assigners only */}
           {isAssigner && (
             <button
               onClick={() => setShowAdminPanel(true)}
@@ -413,7 +553,7 @@ export default function UWAssignmentTracker() {
           )}
 
           <button
-            onClick={signOut}
+            onClick={handleSignOut}
             style={{
               padding: '8px 16px',
               borderRadius: '8px',
@@ -436,7 +576,7 @@ export default function UWAssignmentTracker() {
           onClose={() => setShowAdminPanel(false)}
           onConfigChange={() => {
             setShowAdminPanel(false);
-            loadData(); // Reload data after admin changes
+            loadData();
           }}
         />
       )}
@@ -473,7 +613,7 @@ export default function UWAssignmentTracker() {
       }}>
         {sortedUWs.map(uw => {
           const status = uw.status;
-          const isOwnCard = appUser?.email?.toLowerCase() === uw.email?.toLowerCase();
+          const isOwnCard = currentUser?.toLowerCase() === uw.email?.toLowerCase();
           const canEditStatus = isAssigner || isOwnCard;
 
           const statusColors = {
@@ -496,7 +636,6 @@ export default function UWAssignmentTracker() {
                 transition: 'all 0.2s ease'
               }}
             >
-              {/* Name and Timestamp Row */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -525,7 +664,6 @@ export default function UWAssignmentTracker() {
                   )}
                 </div>
 
-                {/* Count - Only visible to assigners */}
                 {isAssigner && (
                   <div style={{
                     display: 'flex',
@@ -584,7 +722,6 @@ export default function UWAssignmentTracker() {
                 )}
               </div>
 
-              {/* Status Buttons */}
               {canEditStatus && (
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
