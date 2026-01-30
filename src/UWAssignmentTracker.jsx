@@ -5,7 +5,8 @@ import {
   getTrackerData,
   updateTrackerStatus,
   subscribeToTrackerChanges,
-  unsubscribe
+  unsubscribe,
+  isSupabaseConfigured
 } from './utils/supabase.js';
 import {
   logStatusChange,
@@ -317,6 +318,56 @@ export default function UWAssignmentTracker() {
       config.assigners.push(user.email);
     }
   });
+
+  // ============================================
+  // RENDER: CONFIGURATION ERROR
+  // ============================================
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}>
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '16px',
+          padding: '40px',
+          maxWidth: '500px',
+          width: '100%',
+          textAlign: 'center'
+        }}>
+          <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: '600', marginBottom: '12px' }}>
+            Configuration Required
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', marginBottom: '20px', lineHeight: '1.6' }}>
+            Supabase environment variables are not configured. Please add the following to your Vercel project settings:
+          </p>
+          <div style={{
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: '8px',
+            padding: '16px',
+            textAlign: 'left',
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            color: '#f87171'
+          }}>
+            <div>VITE_SUPABASE_URL</div>
+            <div>VITE_SUPABASE_ANON_KEY</div>
+          </div>
+          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', marginTop: '16px' }}>
+            After adding these variables, redeploy your application.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ============================================
   // RENDER: LOADING STATE
