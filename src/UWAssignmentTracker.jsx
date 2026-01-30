@@ -1,61 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  validateAuthorization,
-  canModifyStatus,
-  canModifyCount,
-  normalizeEmail,
-  UserRole,
-  ValidationMessages
-} from './utils/validation.js';
-import storage from './utils/storage.js';
+import { useAuth } from './contexts/AuthContext.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import {
+  getUsers,
+  getTrackerData,
+  updateTrackerStatus,
+  subscribeToTrackerChanges,
+  unsubscribe
+} from './utils/supabase.js';
+import {
   logStatusChange,
-  logCountChange,
-  logUserLogin,
-  logUserLogout,
-  logDailyReset
+  logCountChange
 } from './utils/auditLog.js';
-
-// ============================================
-// CONFIGURATION
-// This section will be replaced with dynamic loading from Supabase
-// ============================================
-const CONFIG = {
-  underwriters: {
-    "brian.mosman@nationslending.com": { name: "Brian Mosman" },
-    "jill.beaulieu@nationslending.com": { name: "Jill Beaulieu" },
-    "miranda.gammella@nationslending.com": { name: "Miranda Gammella" },
-    "ronnie.rasso@nationslending.com": { name: "Ronnie Rasso" },
-    "shelley.tobin@nationslending.com": { name: "Shelley Tobin" },
-    "lisa.kinsinger@nationslending.com": { name: "Lisa Kinsinger" },
-    "mary.butler@nationslending.com": { name: "Mary Butler" },
-    "shannon.villasenor@nationslending.com": { name: "Shannon Villasenor" },
-    "tonya.ross@nationslending.com": { name: "Tonya Ross" },
-    "terry.lunsford@nationslending.com": { name: "Terry Lunsford" },
-    "rachel.anselmi@nationslending.com": { name: "Rachel Anselmi" },
-    "christie.santucci@nationslending.com": { name: "Christie Santucci" },
-    "tamara.johnson@nationslending.com": { name: "Tamara Johnson" },
-    "linda.baehr@nationslending.com": { name: "Linda Baehr" },
-    "demian.brown@nationslending.com": { name: "Demian Brown" },
-    "judy.marsh@nationslending.com": { name: "Judy Marsh" },
-    "cindy.hoffman@nationslending.com": { name: "Cindy Hoffman" },
-    "tracy.harvey@nationslending.com": { name: "Tracy Harvey" },
-    "gaby.degroot@nationslending.com": { name: "Gaby DeGroot" }
-  },
-  assigners: [
-    "daniel.obenauf@nationslending.com",
-    "ricky.hanchett@nationslending.com",
-    "kylie.mason@nationslending.com",
-    "karen.hatfield@nationslending.com"
-  ],
-  // Future: API endpoint for dynamic user management
-  apiEndpoint: null,
-  // Allowed email domains
-  allowedDomains: ['nationslending.com']
-};
-
-const STORAGE_KEY = 'uw-tracker-shared-data';
 
 // ============================================
 // TIME UTILITIES
@@ -63,7 +19,7 @@ const STORAGE_KEY = 'uw-tracker-shared-data';
 
 function getCSTDateString() {
   const now = new Date();
-  const cstOffset = -6 * 60; // CST is UTC-6
+  const cstOffset = -6 * 60;
   const utcOffset = now.getTimezoneOffset();
   const cstTime = new Date(now.getTime() + (utcOffset + cstOffset) * 60000);
 
@@ -94,52 +50,21 @@ function getCSTTimestamp() {
 }
 
 // ============================================
-// DATA MANAGEMENT
-// ============================================
-
-function createDefaultData(config) {
-  const data = {
-    lastResetDate: getCSTDateString(),
-    underwriters: {}
-  };
-
-  Object.keys(config.underwriters).forEach(email => {
-    data.underwriters[email] = {
-      status: 'neutral',
-      count: 0,
-      statusTime: null,
-      statusTimestamp: null
-    };
-  });
-
-  return data;
-}
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function UWAssignmentTracker() {
-  // Auth state
-  const [currentUser, setCurrentUser] = useState(null);
-  const [userRole, setUserRole] = useState(UserRole.UNKNOWN);
-  const [displayName, setDisplayName] = useState('');
+  const { appUser, signOut, isAssigner } = useAuth();
 
-  // UI state
-  const [emailInput, setEmailInput] = useState('');
-  const [appData, setAppData] = useState(null);
+  // Data state
+  const [users, setUsers] = useState([]);
+  const [trackerData, setTrackerData] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [errors, setErrors] = useState([]);
+
+  // UI state
   const [notification, setNotification] = useState(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-
-  // Config state (for future dynamic loading)
-  const [config, setConfig] = useState(CONFIG);
-
-  // Derived state
-  const isAssigner = userRole === UserRole.ASSIGNER;
-  const isUW = userRole === UserRole.UNDERWRITER;
 
   // ============================================
   // DATA OPERATIONS
@@ -147,68 +72,63 @@ export default function UWAssignmentTracker() {
 
   const loadData = useCallback(async () => {
     try {
-      const result = await storage.get(STORAGE_KEY, true);
-      let data;
+      // Load users
+      const { data: usersData, error: usersError } = await getUsers();
+      if (usersError) throw usersError;
 
-      if (result && result.value) {
-        data = JSON.parse(result.value);
+      // Load tracker status
+      const { data: trackerDataArr, error: trackerError } = await getTrackerData();
+      if (trackerError) throw trackerError;
 
-        // Check for daily reset
-        const today = getCSTDateString();
-        if (data.lastResetDate !== today) {
-          Object.keys(data.underwriters).forEach(email => {
-            data.underwriters[email].count = 0;
-            data.underwriters[email].status = 'neutral';
-            data.underwriters[email].statusTime = null;
-            data.underwriters[email].statusTimestamp = null;
-          });
-          data.lastResetDate = today;
-          await storage.set(STORAGE_KEY, JSON.stringify(data), true);
+      // Convert tracker data array to object keyed by email
+      const trackerObj = {};
+      trackerDataArr?.forEach(row => {
+        trackerObj[row.email] = {
+          status: row.status || 'neutral',
+          count: row.count || 0,
+          statusTime: row.status_time,
+          statusTimestamp: row.status_timestamp
+        };
+      });
 
-          // Audit log for daily reset
-          logDailyReset('system');
-        }
-
-        // Sync with config (add new UWs, ensure fields exist)
-        Object.keys(config.underwriters).forEach(email => {
-          if (!data.underwriters[email]) {
-            data.underwriters[email] = {
-              status: 'neutral',
-              count: 0,
-              statusTime: null,
-              statusTimestamp: null
-            };
-          }
-          if (data.underwriters[email].statusTime === undefined) {
-            data.underwriters[email].statusTime = null;
-            data.underwriters[email].statusTimestamp = null;
-          }
-        });
-      } else {
-        data = createDefaultData(config);
-        await storage.set(STORAGE_KEY, JSON.stringify(data), true);
-      }
-
-      setAppData(data);
-      setErrors([]);
+      setUsers(usersData || []);
+      setTrackerData(trackerObj);
     } catch (err) {
-      console.error('Storage error:', err);
-      setAppData(createDefaultData(config));
-      showNotification(ValidationMessages.STORAGE_ERROR, 'error');
+      console.error('Error loading data:', err);
+      showNotification('Failed to load data. Please refresh.', 'error');
     }
     setLoading(false);
     setRefreshing(false);
-  }, [config]);
-
-  const saveData = useCallback(async (newData) => {
-    try {
-      await storage.set(STORAGE_KEY, JSON.stringify(newData), true);
-      setAppData(newData);
-    } catch (err) {
-      console.error('Save error:', err);
-      showNotification(ValidationMessages.STORAGE_ERROR, 'error');
-    }
   }, []);
+
+  // ============================================
+  // REALTIME SUBSCRIPTION
+  // ============================================
+
+  useEffect(() => {
+    loadData();
+
+    // Subscribe to realtime changes
+    const subscription = subscribeToTrackerChanges((payload) => {
+      console.log('Realtime update:', payload);
+
+      if (payload.new) {
+        setTrackerData(prev => ({
+          ...prev,
+          [payload.new.email]: {
+            status: payload.new.status || 'neutral',
+            count: payload.new.count || 0,
+            statusTime: payload.new.status_time,
+            statusTimestamp: payload.new.status_timestamp
+          }
+        }));
+      }
+    });
+
+    return () => {
+      unsubscribe(subscription);
+    };
+  }, [loadData]);
 
   // ============================================
   // NOTIFICATION SYSTEM
@@ -220,109 +140,86 @@ export default function UWAssignmentTracker() {
   }, []);
 
   // ============================================
-  // AUTH OPERATIONS
-  // ============================================
-
-  function handleLogin() {
-    // Clear previous errors
-    setErrors([]);
-
-    // Validate authorization using our validation module
-    const authResult = validateAuthorization(emailInput, config);
-
-    if (!authResult.isAuthorized) {
-      setErrors(authResult.errors);
-      return;
-    }
-
-    // Successful login
-    setCurrentUser(authResult.email);
-    setUserRole(authResult.role);
-    setDisplayName(authResult.displayName);
-    setErrors([]);
-    showNotification(`Welcome, ${authResult.displayName}!`, 'success');
-
-    // Audit log
-    logUserLogin(authResult.email, authResult.role);
-  }
-
-  function handleSignOut() {
-    // Audit log (before clearing currentUser)
-    if (currentUser) {
-      logUserLogout(currentUser);
-    }
-
-    setCurrentUser(null);
-    setUserRole(UserRole.UNKNOWN);
-    setDisplayName('');
-    setEmailInput('');
-    setErrors([]);
-  }
-
-  // ============================================
   // STATUS & COUNT OPERATIONS
   // ============================================
 
-  function changeStatus(email, newStatus) {
-    // Authorization check using validation module
-    if (!canModifyStatus(currentUser, email, userRole)) {
-      showNotification(ValidationMessages.UNAUTHORIZED_ACTION, 'error');
+  async function changeStatus(email, newStatus) {
+    // Authorization check
+    const canEdit = isAssigner || appUser?.email === email;
+    if (!canEdit) {
+      showNotification('You are not authorized to perform this action.', 'error');
       return;
     }
 
-    if (!appData) return;
-
-    const currentStatus = appData.underwriters[email]?.status || 'neutral';
+    const current = trackerData[email] || {};
+    const currentStatus = current.status || 'neutral';
     const updatedStatus = currentStatus === newStatus ? 'neutral' : newStatus;
 
-    // Audit log
-    logStatusChange(currentUser, email, currentStatus, updatedStatus);
-
-    const newData = {
-      ...appData,
-      underwriters: {
-        ...appData.underwriters,
-        [email]: {
-          ...appData.underwriters[email],
-          status: updatedStatus,
-          statusTime: updatedStatus !== 'neutral' ? getCSTTimeString() : null,
-          statusTimestamp: updatedStatus !== 'neutral' ? getCSTTimestamp() : null
-        }
+    // Optimistic update
+    setTrackerData(prev => ({
+      ...prev,
+      [email]: {
+        ...prev[email],
+        status: updatedStatus,
+        statusTime: updatedStatus !== 'neutral' ? getCSTTimeString() : null,
+        statusTimestamp: updatedStatus !== 'neutral' ? getCSTTimestamp() : null
       }
-    };
+    }));
 
-    saveData(newData);
+    // Audit log
+    logStatusChange(appUser?.email, email, currentStatus, updatedStatus);
+
+    // Save to Supabase
+    const { error } = await updateTrackerStatus(email, {
+      status: updatedStatus,
+      status_time: updatedStatus !== 'neutral' ? getCSTTimeString() : null,
+      status_timestamp: updatedStatus !== 'neutral' ? getCSTTimestamp() : null
+    });
+
+    if (error) {
+      console.error('Error updating status:', error);
+      showNotification('Failed to update status.', 'error');
+      // Revert optimistic update
+      loadData();
+    }
   }
 
-  function changeCount(email, delta) {
-    // Authorization check using validation module
-    if (!canModifyCount(userRole)) {
-      showNotification(ValidationMessages.UNAUTHORIZED_ACTION, 'error');
+  async function changeCount(email, delta) {
+    // Authorization check
+    if (!isAssigner) {
+      showNotification('You are not authorized to perform this action.', 'error');
       return;
     }
 
-    if (!appData) return;
-
-    const currentCount = appData.underwriters[email]?.count || 0;
+    const current = trackerData[email] || {};
+    const currentCount = current.count || 0;
     const newCount = Math.max(0, Math.min(99, currentCount + delta));
 
-    // Only log if count actually changed
-    if (currentCount !== newCount) {
-      logCountChange(currentUser, email, currentCount, newCount);
-    }
+    if (currentCount === newCount) return;
 
-    const newData = {
-      ...appData,
-      underwriters: {
-        ...appData.underwriters,
-        [email]: {
-          ...appData.underwriters[email],
-          count: newCount
-        }
+    // Optimistic update
+    setTrackerData(prev => ({
+      ...prev,
+      [email]: {
+        ...prev[email],
+        count: newCount
       }
-    };
+    }));
 
-    saveData(newData);
+    // Audit log
+    logCountChange(appUser?.email, email, currentCount, newCount);
+
+    // Save to Supabase
+    const { error } = await updateTrackerStatus(email, {
+      count: newCount
+    });
+
+    if (error) {
+      console.error('Error updating count:', error);
+      showNotification('Failed to update count.', 'error');
+      // Revert optimistic update
+      loadData();
+    }
   }
 
   // ============================================
@@ -330,15 +227,15 @@ export default function UWAssignmentTracker() {
   // ============================================
 
   function getSortedUnderwriters() {
-    if (!appData) return [];
+    const underwriters = users.filter(u => u.role === 'underwriter');
 
-    const entries = Object.entries(config.underwriters).map(([email, info]) => ({
-      email,
-      name: info.name,
-      status: appData.underwriters[email]?.status || 'neutral',
-      count: appData.underwriters[email]?.count || 0,
-      statusTime: appData.underwriters[email]?.statusTime || null,
-      statusTimestamp: appData.underwriters[email]?.statusTimestamp || null
+    const entries = underwriters.map(user => ({
+      email: user.email,
+      name: user.name,
+      status: trackerData[user.email]?.status || 'neutral',
+      count: trackerData[user.email]?.count || 0,
+      statusTime: trackerData[user.email]?.statusTime || null,
+      statusTimestamp: trackerData[user.email]?.statusTimestamp || null
     }));
 
     const greens = entries.filter(u => u.status === 'green');
@@ -362,14 +259,6 @@ export default function UWAssignmentTracker() {
     return [...greens, ...neutrals, ...reds];
   }
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
   // Handle refresh
   async function handleRefresh() {
     setRefreshing(true);
@@ -380,9 +269,20 @@ export default function UWAssignmentTracker() {
   // COMPUTED VALUES
   // ============================================
 
-  const totalAssigned = appData
-    ? Object.values(appData.underwriters).reduce((sum, uw) => sum + (uw.count || 0), 0)
-    : 0;
+  const totalAssigned = Object.values(trackerData).reduce((sum, uw) => sum + (uw.count || 0), 0);
+
+  // Build config for admin panel (from users data)
+  const config = {
+    underwriters: {},
+    assigners: []
+  };
+  users.forEach(user => {
+    if (user.role === 'underwriter') {
+      config.underwriters[user.email] = { name: user.name };
+    } else if (user.role === 'assigner') {
+      config.assigners.push(user.email);
+    }
+  });
 
   // ============================================
   // RENDER: LOADING STATE
@@ -406,132 +306,6 @@ export default function UWAssignmentTracker() {
           animation: 'spin 0.8s linear infinite'
         }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
-
-  // ============================================
-  // RENDER: LOGIN SCREEN
-  // ============================================
-
-  if (!currentUser) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      }}>
-        <div style={{
-          background: 'rgba(30, 41, 59, 0.8)',
-          borderRadius: '16px',
-          padding: '40px',
-          maxWidth: '400px',
-          width: '100%',
-          border: '1px solid rgba(255,255,255,0.1)'
-        }}>
-          <h1 style={{
-            color: '#fff',
-            fontSize: '24px',
-            fontWeight: '600',
-            marginBottom: '8px',
-            textAlign: 'center'
-          }}>UW Assignment Tracker</h1>
-          <p style={{
-            color: 'rgba(255,255,255,0.5)',
-            fontSize: '14px',
-            marginBottom: '32px',
-            textAlign: 'center'
-          }}>Sign in to continue</p>
-
-          <div>
-            <input
-              type="email"
-              value={emailInput}
-              onChange={(e) => {
-                setEmailInput(e.target.value);
-                if (errors.length > 0) setErrors([]);
-              }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-              placeholder="your.name@nationslending.com"
-              autoComplete="email"
-              autoCapitalize="none"
-              spellCheck="false"
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                borderRadius: '8px',
-                border: errors.length > 0
-                  ? '1px solid #ef4444'
-                  : '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(15, 23, 42, 0.8)',
-                color: '#fff',
-                fontSize: '16px',
-                marginBottom: '16px',
-                boxSizing: 'border-box',
-                transition: 'border-color 0.2s ease'
-              }}
-            />
-
-            {/* Validation Errors */}
-            {errors.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                {errors.map((error, index) => (
-                  <p key={index} style={{
-                    color: '#f87171',
-                    fontSize: '14px',
-                    margin: '4px 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}>
-                    <span style={{ fontSize: '12px' }}>⚠</span>
-                    {error}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleLogin}
-              style={{
-                width: '100%',
-                padding: '14px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'transform 0.1s ease, box-shadow 0.2s ease'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              Sign In
-            </button>
-
-            <p style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: '12px',
-              marginTop: '16px',
-              textAlign: 'center'
-            }}>
-              Use your Nations Lending email address
-            </p>
-          </div>
-        </div>
       </div>
     );
   }
@@ -593,7 +367,7 @@ export default function UWAssignmentTracker() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>
-            {displayName}
+            {appUser?.name}
             {isAssigner && <span style={{ color: '#667eea' }}> (Assigner)</span>}
           </span>
 
@@ -639,7 +413,7 @@ export default function UWAssignmentTracker() {
           )}
 
           <button
-            onClick={handleSignOut}
+            onClick={signOut}
             style={{
               padding: '8px 16px',
               borderRadius: '8px',
@@ -660,9 +434,9 @@ export default function UWAssignmentTracker() {
         <AdminPanel
           config={config}
           onClose={() => setShowAdminPanel(false)}
-          onConfigChange={(newConfig) => {
-            setConfig(newConfig);
+          onConfigChange={() => {
             setShowAdminPanel(false);
+            loadData(); // Reload data after admin changes
           }}
         />
       )}
@@ -699,8 +473,8 @@ export default function UWAssignmentTracker() {
       }}>
         {sortedUWs.map(uw => {
           const status = uw.status;
-          const isOwnCard = normalizeEmail(currentUser) === normalizeEmail(uw.email);
-          const canEditStatus = canModifyStatus(currentUser, uw.email, userRole);
+          const isOwnCard = appUser?.email?.toLowerCase() === uw.email?.toLowerCase();
+          const canEditStatus = isAssigner || isOwnCard;
 
           const statusColors = {
             green: { bg: 'rgba(34, 197, 94, 0.15)', border: '#22c55e', glow: 'rgba(34, 197, 94, 0.3)' },
