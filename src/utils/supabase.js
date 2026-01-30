@@ -11,19 +11,24 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Validate environment variables
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables. Check your .env file.');
-}
+// Track if Supabase is configured
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// Create Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true
-  }
-});
+// Create Supabase client only if configured
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true
+      }
+    })
+  : null;
+
+// Log warning if not configured
+if (!isSupabaseConfigured) {
+  console.error('Missing Supabase environment variables. Make sure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
+}
 
 /**
  * Authentication helpers
@@ -34,6 +39,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * @returns {Promise<{data, error}>}
  */
 export async function signInWithGitHub() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'github',
     options: {
@@ -48,6 +54,7 @@ export async function signInWithGitHub() {
  * @returns {Promise<{error}>}
  */
 export async function signOut() {
+  if (!supabase) return { error: new Error('Supabase not configured') };
   const { error } = await supabase.auth.signOut();
   return { error };
 }
@@ -57,6 +64,7 @@ export async function signOut() {
  * @returns {Promise<{data: {session}, error}>}
  */
 export async function getSession() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase.auth.getSession();
   return { data, error };
 }
@@ -66,6 +74,7 @@ export async function getSession() {
  * @returns {Promise<{data: {user}, error}>}
  */
 export async function getUser() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase.auth.getUser();
   return { data, error };
 }
@@ -76,6 +85,7 @@ export async function getUser() {
  * @returns {Object} Subscription object with unsubscribe method
  */
 export function onAuthStateChange(callback) {
+  if (!supabase) return null;
   const { data: { subscription } } = supabase.auth.onAuthStateChange(callback);
   return subscription;
 }
@@ -89,6 +99,7 @@ export function onAuthStateChange(callback) {
  * @returns {Promise<{data, error}>}
  */
 export async function getUsers() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -102,6 +113,7 @@ export async function getUsers() {
  * @returns {Promise<{data, error}>}
  */
 export async function getUserByEmail(email) {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -116,6 +128,7 @@ export async function getUserByEmail(email) {
  * @returns {Promise<{data, error}>}
  */
 export async function addUser(user) {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('users')
     .insert([{
@@ -134,6 +147,7 @@ export async function addUser(user) {
  * @returns {Promise<{data, error}>}
  */
 export async function removeUser(email) {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('users')
     .delete()
@@ -146,6 +160,7 @@ export async function removeUser(email) {
  * @returns {Promise<{data, error}>}
  */
 export async function getTrackerData() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('tracker_status')
     .select('*');
@@ -159,6 +174,7 @@ export async function getTrackerData() {
  * @returns {Promise<{data, error}>}
  */
 export async function updateTrackerStatus(email, updates) {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('tracker_status')
     .upsert({
@@ -176,6 +192,7 @@ export async function updateTrackerStatus(email, updates) {
  * @returns {Promise<{data, error}>}
  */
 export async function resetAllTrackerStatuses() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('tracker_status')
     .update({
@@ -195,6 +212,7 @@ export async function resetAllTrackerStatuses() {
  * @returns {Object} Subscription object
  */
 export function subscribeToTrackerChanges(callback) {
+  if (!supabase) return null;
   return supabase
     .channel('tracker_changes')
     .on(
