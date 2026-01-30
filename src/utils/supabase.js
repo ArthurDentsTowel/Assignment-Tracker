@@ -177,11 +177,14 @@ export async function updateTrackerStatus(email, updates) {
   if (!supabase) return { data: null, error: new Error('Supabase not configured') };
   const { data, error } = await supabase
     .from('tracker_status')
-    .upsert({
-      email: email.toLowerCase(),
-      ...updates,
-      updated_at: new Date().toISOString()
-    })
+    .upsert(
+      {
+        email: email.toLowerCase(),
+        ...updates,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: 'email' }
+    )
     .select()
     .single();
   return { data, error };
