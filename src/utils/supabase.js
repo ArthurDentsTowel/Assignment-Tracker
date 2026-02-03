@@ -210,6 +210,19 @@ export async function resetAllTrackerStatuses() {
 }
 
 /**
+ * Fetch the most recent daily snapshot (previous day's status before reset)
+ * @returns {Promise<{data, error}>}
+ */
+export async function getDailySnapshot() {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') };
+  const { data, error } = await supabase
+    .from('daily_snapshot')
+    .select('*')
+    .order('name');
+  return { data, error };
+}
+
+/**
  * Subscribe to tracker status changes (real-time)
  * @param {Function} callback - Called when tracker data changes
  * @returns {Object} Subscription object

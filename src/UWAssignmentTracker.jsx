@@ -6,6 +6,7 @@ import {
   updateTrackerStatus,
   subscribeToTrackerChanges,
   unsubscribe,
+  getDailySnapshot,
   isSupabaseConfigured
 } from './utils/supabase.js';
 import {
@@ -57,6 +58,9 @@ export default function UWAssignmentTracker() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Snapshot state (previous day)
+  const [snapshotData, setSnapshotData] = useState([]);
+
   // UI state
   const [notification, setNotification] = useState(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -89,8 +93,13 @@ export default function UWAssignmentTracker() {
         };
       });
 
+      // Load daily snapshot (previous day)
+      const { data: snapshotArr, error: snapshotError } = await getDailySnapshot();
+      if (snapshotError) console.warn('Could not load daily snapshot:', snapshotError);
+
       setUsers(usersData || []);
       setTrackerData(trackerObj);
+      setSnapshotData(snapshotArr || []);
     } catch (err) {
       console.error('Error loading data:', err);
       showNotification('Failed to load data. Please refresh.', 'error');
@@ -291,6 +300,27 @@ export default function UWAssignmentTracker() {
     });
 
     reds.sort((a, b) => (a.statusTimestamp || 0) - (b.statusTimestamp || 0));
+
+    return [...greens, ...neutrals, ...reds];
+  }
+
+  function getSortedSnapshot() {
+    const greens = snapshotData.filter(s => s.status === 'green');
+    const neutrals = snapshotData.filter(s => s.status === 'neutral');
+    const reds = snapshotData.filter(s => s.status === 'red');
+
+    greens.sort((a, b) => a.name.localeCompare(b.name));
+
+    neutrals.sort((a, b) => {
+      const aHasCount = a.count > 0;
+      const bHasCount = b.count > 0;
+      if (aHasCount && bHasCount) return a.count - b.count;
+      if (aHasCount && !bHasCount) return 1;
+      if (!aHasCount && bHasCount) return -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    reds.sort((a, b) => a.name.localeCompare(b.name));
 
     return [...greens, ...neutrals, ...reds];
   }
@@ -507,6 +537,8 @@ export default function UWAssignmentTracker() {
   // ============================================
 
   const sortedUWs = getSortedUnderwriters();
+  const sortedSnapshot = getSortedSnapshot();
+  const snapshotDate = snapshotData.length > 0 ? snapshotData[0].snapshot_date : null;
 
   return (
     <div style={{
@@ -538,7 +570,7 @@ export default function UWAssignmentTracker() {
 
       {/* Header */}
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: isAssigner ? '1400px' : '1200px',
         margin: '0 auto 24px',
         display: 'flex',
         justifyContent: 'space-between',
@@ -634,7 +666,7 @@ export default function UWAssignmentTracker() {
 
       {/* Legend */}
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: isAssigner ? '1400px' : '1200px',
         margin: '0 auto 20px',
         display: 'flex',
         gap: '24px',
@@ -654,164 +686,256 @@ export default function UWAssignmentTracker() {
         </div>
       </div>
 
-      {/* UW Cards Grid */}
+      {/* Main Content Area: Sidebar + Grid */}
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: isAssigner ? '1400px' : '1200px',
         margin: '0 auto',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: '16px'
+        display: 'flex',
+        gap: '20px'
       }}>
-        {sortedUWs.map(uw => {
-          const status = uw.status;
-          const isOwnCard = currentUser?.toLowerCase() === uw.email?.toLowerCase();
-          const canEditStatus = isAssigner || isOwnCard;
 
-          const statusColors = {
-            green: { bg: 'rgba(34, 197, 94, 0.15)', border: '#22c55e', glow: 'rgba(34, 197, 94, 0.3)' },
-            red: { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', glow: 'rgba(239, 68, 68, 0.3)' },
-            neutral: { bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', glow: 'none' }
-          };
-
-          const colors = statusColors[status];
-
-          return (
-            <div
-              key={uw.email}
-              style={{
-                background: colors.bg,
-                borderRadius: '12px',
-                padding: '16px',
-                border: `2px solid ${colors.border}`,
-                boxShadow: colors.glow !== 'none' ? `0 0 20px ${colors.glow}` : 'none',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: '12px'
+        {/* Previous Day Sidebar - Assigners Only */}
+        {isAssigner && sortedSnapshot.length > 0 && (
+          <div style={{
+            width: '180px',
+            minWidth: '180px',
+            flexShrink: 0
+          }}>
+            <div style={{
+              background: 'rgba(30, 41, 59, 0.6)',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              padding: '10px'
+            }}>
+              <h3 style={{
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                margin: '0 0 4px 0',
+                textAlign: 'center'
               }}>
-                <div>
-                  <h3 style={{
-                    color: '#fff',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    margin: 0
-                  }}>
-                    {uw.name}
-                    {isOwnCard && <span style={{ color: '#667eea', marginLeft: '6px' }}>•</span>}
-                  </h3>
-                  {uw.statusTime && (
-                    <span style={{
-                      color: 'rgba(255,255,255,0.5)',
-                      fontSize: '11px',
-                      marginTop: '2px',
-                      display: 'block'
-                    }}>
-                      {uw.statusTime} CST
-                    </span>
-                  )}
-                </div>
+                Previous Day
+              </h3>
+              {snapshotDate && (
+                <p style={{
+                  color: 'rgba(255,255,255,0.4)',
+                  fontSize: '9px',
+                  margin: '0 0 8px 0',
+                  textAlign: 'center'
+                }}>
+                  {new Date(snapshotDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </p>
+              )}
 
-                {isAssigner && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderRadius: '8px',
-                    padding: '4px 8px'
-                  }}>
-                    <button
-                      onClick={() => changeCount(uw.email, -1)}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {sortedSnapshot.map(entry => {
+                  const snapshotColors = {
+                    green: { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)' },
+                    red: { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)' },
+                    neutral: { bg: 'rgba(100, 116, 139, 0.1)', border: 'rgba(100, 116, 139, 0.2)' }
+                  };
+                  const sc = snapshotColors[entry.status];
+
+                  return (
+                    <div
+                      key={entry.email}
                       style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.1)',
-                        color: '#fff',
-                        fontSize: '16px',
-                        cursor: 'pointer',
+                        background: sc.bg,
+                        border: `1px solid ${sc.border}`,
+                        borderRadius: '6px',
+                        padding: '5px 8px',
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
                       }}
                     >
-                      −
-                    </button>
-                    <span style={{
+                      <span style={{
+                        color: 'rgba(255,255,255,0.85)',
+                        fontSize: '10px',
+                        fontWeight: '500',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginRight: '6px'
+                      }}>
+                        {entry.name}
+                      </span>
+                      <span style={{
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: '10px',
+                        fontWeight: '600',
+                        flexShrink: 0
+                      }}>
+                        {entry.count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* UW Cards Grid */}
+        <div style={{
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '16px'
+        }}>
+          {sortedUWs.map(uw => {
+            const status = uw.status;
+            const isOwnCard = currentUser?.toLowerCase() === uw.email?.toLowerCase();
+            const canEditStatus = isAssigner || isOwnCard;
+
+            const statusColors = {
+              green: { bg: 'rgba(34, 197, 94, 0.15)', border: '#22c55e', glow: 'rgba(34, 197, 94, 0.3)' },
+              red: { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', glow: 'rgba(239, 68, 68, 0.3)' },
+              neutral: { bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', glow: 'none' }
+            };
+
+            const colors = statusColors[status];
+
+            return (
+              <div
+                key={uw.email}
+                style={{
+                  background: colors.bg,
+                  borderRadius: '12px',
+                  padding: '16px',
+                  border: `2px solid ${colors.border}`,
+                  boxShadow: colors.glow !== 'none' ? `0 0 20px ${colors.glow}` : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  marginBottom: '12px'
+                }}>
+                  <div>
+                    <h3 style={{
                       color: '#fff',
                       fontSize: '16px',
                       fontWeight: '600',
-                      minWidth: '24px',
-                      textAlign: 'center'
+                      margin: 0
                     }}>
-                      {uw.count}
-                    </span>
-                    <button
-                      onClick={() => changeCount(uw.email, 1)}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.1)',
+                      {uw.name}
+                      {isOwnCard && <span style={{ color: '#667eea', marginLeft: '6px' }}>•</span>}
+                    </h3>
+                    {uw.statusTime && (
+                      <span style={{
+                        color: 'rgba(255,255,255,0.5)',
+                        fontSize: '11px',
+                        marginTop: '2px',
+                        display: 'block'
+                      }}>
+                        {uw.statusTime} CST
+                      </span>
+                    )}
+                  </div>
+
+                  {isAssigner && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'rgba(0,0,0,0.3)',
+                      borderRadius: '8px',
+                      padding: '4px 8px'
+                    }}>
+                      <button
+                        onClick={() => changeCount(uw.email, -1)}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          background: 'rgba(255,255,255,0.1)',
+                          color: '#fff',
+                          fontSize: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        −
+                      </button>
+                      <span style={{
                         color: '#fff',
                         fontSize: '16px',
+                        fontWeight: '600',
+                        minWidth: '24px',
+                        textAlign: 'center'
+                      }}>
+                        {uw.count}
+                      </span>
+                      <button
+                        onClick={() => changeCount(uw.email, 1)}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          background: 'rgba(255,255,255,0.1)',
+                          color: '#fff',
+                          fontSize: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {canEditStatus && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => changeStatus(uw.email, 'green')}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: status === 'green' ? '2px solid #22c55e' : '2px solid transparent',
+                        background: status === 'green' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(34, 197, 94, 0.1)',
+                        color: '#22c55e',
+                        fontSize: '18px',
                         cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
+                        transition: 'all 0.2s ease'
                       }}
                     >
-                      +
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => changeStatus(uw.email, 'red')}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: status === 'red' ? '2px solid #ef4444' : '2px solid transparent',
+                        background: status === 'red' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.1)',
+                        color: '#ef4444',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      ✕
                     </button>
                   </div>
                 )}
               </div>
-
-              {canEditStatus && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => changeStatus(uw.email, 'green')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '8px',
-                      border: status === 'green' ? '2px solid #22c55e' : '2px solid transparent',
-                      background: status === 'green' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(34, 197, 94, 0.1)',
-                      color: '#22c55e',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    ✓
-                  </button>
-                  <button
-                    onClick={() => changeStatus(uw.email, 'red')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '8px',
-                      border: status === 'red' ? '2px solid #ef4444' : '2px solid transparent',
-                      background: status === 'red' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.1)',
-                      color: '#ef4444',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <style>{`
