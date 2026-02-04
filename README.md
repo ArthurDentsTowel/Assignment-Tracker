@@ -95,11 +95,11 @@ To add or remove users, edit the `CONFIG` object at the top of the code:
 ```javascript
 const CONFIG = {
   underwriters: {
-    "email@nationslending.com": { name: "Display Name" },
+    "email@nxxxx.com": { name: "Display Name" },
     // Add or remove UWs here
   },
   assigners: [
-    "assigner.email@nationslending.com",
+    "assigner.email@xxxx.com",
     // Add or remove assigners here
   ]
 };
