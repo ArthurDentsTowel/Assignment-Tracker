@@ -21,40 +21,6 @@ The UW Assignment Tracker allows underwriters to signal their availability for n
 
 ---
 
-## User Roles
-
-### Underwriters (19)
-| Name | Email |
-|------|-------|
-| Brian Mosman | brian.mosman@nationslending.com |
-| Jill Beaulieu | jill.beaulieu@nationslending.com |
-| Miranda Gammella | miranda.gammella@nationslending.com |
-| Ronnie Rasso | ronnie.rasso@nationslending.com |
-| Shelley Tobin | shelley.tobin@nationslending.com |
-| Lisa Kinsinger | lisa.kinsinger@nationslending.com |
-| Mary Butler | mary.butler@nationslending.com |
-| Shannon Villasenor | shannon.villasenor@nationslending.com |
-| Tonya Ross | tonya.ross@nationslending.com |
-| Terry Lunsford | terry.lunsford@nationslending.com |
-| Rachel Anselmi | rachel.anselmi@nationslending.com |
-| Christie Santucci | christie.santucci@nationslending.com |
-| Tamara Johnson | tamara.johnson@nationslending.com |
-| Linda Baehr | linda.baehr@nationslending.com |
-| Demian Brown | demian.brown@nationslending.com |
-| Judy Marsh | judy.marsh@nationslending.com |
-| Cindy Hoffman | cindy.hoffman@nationslending.com |
-| Tracy Harvey | tracy.harvey@nationslending.com |
-| Gaby DeGroot | gaby.degroot@nationslending.com |
-
-### Assigners (4)
-| Name | Email |
-|------|-------|
-| Daniel Obenauf | daniel.obenauf@nationslending.com |
-| Ricky Hanchett | ricky.hanchett@nationslending.com |
-| Kylie Mason | kylie.mason@nationslending.com |
-| Karen Hatfield | karen.hatfield@nationslending.com |
-
----
 
 ## How It Works
 
